@@ -1,0 +1,190 @@
+{
+  "name": "Generación de leads: repuestos (Chaco)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Inicio manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "apiKey",
+              "value": "{{ $env.GOOGLE_MAPS_API_KEY || '' }}"
+            },
+            {
+              "name": "keyword",
+              "value": "repuestos"
+            },
+            {
+              "name": "location",
+              "value": "-27.4220824,-60.9482994"
+            },
+            {
+              "name": "radius",
+              "value": "110000"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-config",
+      "name": "Configurar búsqueda",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        520,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 📌 Propósito del flujo\n- Busca \"repuestos\" en el área de Resistencia (Chaco, Argentina) usando Google Maps.\n- Devuelve nombre, dirección, coordenadas, teléfono y web (si existen) de cada comercio.\n- Requiere una API Key de Google Maps con permisos del Places API. Cárgala en la variable \`GOOGLE_MAPS_API_KEY\`.\n\n### Cómo usarlo\n1. Completa o sobreescribe los valores en **Configurar búsqueda**.\n2. Ejecuta el flujo con **Test workflow**.\n3. Descarga los datos desde el último nodo (Formatear Lead) o encadénalo a Sheets/CRM según tu stack.\n\n### Parámetros principales\n- **keyword**: término de búsqueda (\"repuestos\" por defecto).\n- **location**: latitud,longitud de referencia (-27.4220824,-60.9482994).\n- **radius**: radio en metros (110000 ≈ 110 km).",
+        "height": 360,
+        "width": 460
+      },
+      "id": "note-overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        520,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://maps.googleapis.com/maps/api/place/textsearch/json?query={{$json.keyword}}&location={{$json.location}}&radius={{$json.radius}}&language=es&key={{$json.apiKey}}",
+        "responseFormat": "json",
+        "options": {
+          "timeout": 30000,
+          "fullResponse": false,
+          "headers": {
+            "Accept-Language": "es-419"
+          }
+        }
+      },
+      "id": "places-search",
+      "name": "Buscar en Google Places",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const apiKey = $node['Configurar búsqueda'].json.apiKey;\nconst results = $input.first().json.results || [];\nreturn results.map((r) => ({\n  json: {\n    apiKey,\n    place_id: r.place_id,\n    nombre: r.name,\n    direccion: r.formatted_address,\n    lat: r.geometry?.location?.lat,\n    lng: r.geometry?.location?.lng\n  }\n}));"
+      },
+      "id": "flatten-results",
+      "name": "Expandir resultados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://maps.googleapis.com/maps/api/place/details/json?place_id={{$json.place_id}}&fields=name,formatted_address,international_phone_number,website,geometry&language=es&key={{$json.apiKey}}",
+        "responseFormat": "json",
+        "options": {
+          "timeout": 30000,
+          "fullResponse": false,
+          "headers": {
+            "Accept-Language": "es-419"
+          }
+        }
+      },
+      "id": "place-details",
+      "name": "Detalles por lugar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first().json.result || {};\nconst nombre = result.name || 'Sin nombre';\nconst direccion = result.formatted_address || 'Sin dirección';\nconst lat = result.geometry?.location?.lat;\nconst lng = result.geometry?.location?.lng;\nconst telefono = result.international_phone_number || 'No disponible';\nconst pagina_web = result.website || 'No disponible';\nreturn [{\n  json: {\n    nombre,\n    direccion,\n    ubicacion: lat && lng ? `${lat},${lng}` : 'No disponible',\n    telefono,\n    pagina_web,\n    fuente: 'Google Maps (Places API)'
+  }\n}];"
+      },
+      "id": "format-lead",
+      "name": "Formatear lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1640,
+        320
+      ],
+      "alwaysOutputData": true
+    }
+  ],
+  "connections": {
+    "Configurar búsqueda": {
+      "main": [
+        [
+          {
+            "node": "Buscar en Google Places",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar en Google Places": {
+      "main": [
+        [
+          {
+            "node": "Expandir resultados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expandir resultados": {
+      "main": [
+        [
+          {
+            "node": "Detalles por lugar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detalles por lugar": {
+      "main": [
+        [
+          {
+            "node": "Formatear lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inicio manual": {
+      "main": [
+        [
+          {
+            "node": "Configurar búsqueda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
